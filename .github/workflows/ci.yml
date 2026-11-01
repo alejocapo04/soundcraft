@@ -1,6 +1,6 @@
 # Fork-only validation recipe. Never part of the upstream feature PR.
 # The product checkout is the immutable published feature commit, not this QA branch.
-name: Provider native QA
+name: Provider bridge regression QA
 on:
   workflow_dispatch:
 permissions:
@@ -8,21 +8,21 @@ permissions:
 jobs:
   native:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       CARGO_BUILD_JOBS: "2"
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
       RUST_TEST_THREADS: "1"
       WGPU_BACKEND: vulkan
-      EXPECTED_SOURCE_SHA: "a17384dcf1183318893023974e219dd7b229e2de"
+      EXPECTED_SOURCE_SHA: "fcf2f612289d8d77cfb55829a7d546edd36da009"
       CARGO_CACHE_AUTO_CLEAN_FREQUENCY: "never"
       NEXTEST_TEST_THREADS: "1"
       RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: "a17384dcf1183318893023974e219dd7b229e2de"
+          ref: "fcf2f612289d8d77cfb55829a7d546edd36da009"
           persist-credentials: false
       - name: Prepare runtime environment before tool setup
         shell: bash
@@ -63,18 +63,56 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
           install -d -m 700 "$TMPDIR" "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$EVIDENCE_DIR"
           mkdir -p qa-output artifacts
-      - name: "Build native UI snapshot"
+      - name: "Format before compilation"
         shell: bash
         run: |
           set -euo pipefail
-          timeout 60m cargo build --locked -p soundcraft-ui-egui --example ui_shot
-      - name: "Capture actual default and Recent menu"
+          timeout 5m cargo fmt --all -- --check
+      - name: "Clippy of all affected native targets"
         shell: bash
         run: |
           set -euo pipefail
-          "$CARGO_TARGET_DIR/debug/examples/ui_shot" "$EVIDENCE_DIR/soundcraft-off.png" --blank --size 1440x900
-          "$CARGO_TARGET_DIR/debug/examples/ui_shot" "$EVIDENCE_DIR/soundcraft-on.png" --blank --size 1440x900 --file-provider-preview
-      - name: Verify native evidence and source identity
+          timeout 55m cargo clippy --locked -p soundcraft-ui-egui -p soundcraft-web --all-targets --keep-going -j2 -- -D warnings
+      - name: "Prove the account-switch regression fails without the reset"
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 45m python3 - <<'PY'
+          import os,pathlib,re,subprocess
+          p=pathlib.Path('crates/ui-egui/src/file_providers.rs')
+          original=p.read_bytes()
+          text=original.decode('utf-8')
+          start=text.index('pub fn disconnect(')
+          end=text.index('\n    }',start)
+          body=text[start:end]
+          reset='        s.documents = Value::Null;'
+          assert body.count(reset)==1, 'Expected one document-cache reset in disconnect'
+          mutated=text[:start]+body.replace(reset,'',1)+text[end:]
+          env=dict(os.environ,CARGO_TERM_COLOR='never')
+          try:
+              p.write_bytes(mutated.encode('utf-8'))
+              result=subprocess.run(['cargo','test','--locked','-p','soundcraft-ui-egui','--lib','file_providers::tests::disconnect_forgets_document_metadata_before_another_account_registers','-j2','--','--exact','--test-threads=1'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,env=env,timeout=2400)
+              (pathlib.Path(os.environ['EVIDENCE_DIR'])/'account-reset-negative.log').write_text(result.stdout)
+              expected='test file_providers::tests::disconnect_forgets_document_metadata_before_another_account_registers ... FAILED'
+              assert result.returncode!=0 and expected in result.stdout, 'Negative control must fail in the actual regression, not compilation or a missing test: '+result.stdout[-10000:]
+              print('Confirmed regression fails without the published disconnect reset: file_providers::tests::disconnect_forgets_document_metadata_before_another_account_registers')
+              print(result.stdout[-5000:])
+          finally:
+              p.write_bytes(original)
+          assert p.read_bytes()==original
+          subprocess.run(['git','diff','--exit-code','--','crates/ui-egui/src/file_providers.rs'],check=True)
+          PY
+      - name: "All affected native tests on restored published source"
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 65m cargo test --locked -p soundcraft-ui-egui -p soundcraft-web --lib --bins --tests -j2 -- --test-threads=1
+      - name: "Actual browser WASM package"
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 40m cargo check --locked -p soundcraft-web --target wasm32-unknown-unknown -j2
+      - name: Verify tested source identity
         shell: bash
         run: |
           python3 - <<'PY'
@@ -87,8 +125,8 @@ jobs:
           fonts_sha = subprocess.check_output(['git','-C','craft-fonts','rev-parse','HEAD'],text=True).strip() if pathlib.Path('craft-fonts/.git').exists() else None
           assert fonts_sha == "bfcbf714e45a3ea8e98f88ab2b7971372a576414"
           rustc = subprocess.check_output(['rustc','-Vv'],text=True)
-          files = ["$EVIDENCE_DIR/soundcraft-off.png","$EVIDENCE_DIR/soundcraft-on.png"]
-          assert len(files) == 2
+          files = []
+          assert len(files) == 0
           proof = []
           for raw in files:
               source = pathlib.Path(os.path.expandvars(raw))
@@ -99,17 +137,15 @@ jobs:
               target = out / source.name
               if source.resolve() != target.resolve(): shutil.copy2(source,target)
               proof.append(dict(file=target.name,width=width,height=height,bytes=len(data),sha256=hashlib.sha256(data).hexdigest()))
-          provenance = dict(source_sha=actual,fonts_sha=fonts_sha,rustc=rustc,workflow_sha=os.environ.get('GITHUB_SHA'),run_id=os.environ.get('GITHUB_RUN_ID'),renderer='repository native offscreen renderer; synthetic resources',browser_backend_e2e=False,images=proof)
+          provenance = dict(source_sha=actual,fonts_sha=fonts_sha,rustc=rustc,workflow_sha=os.environ.get('GITHUB_SHA'),run_id=os.environ.get('GITHUB_RUN_ID'),renderer='focused bridge regression validation; no new image capture',browser_backend_e2e=False,images=proof)
           (out / 'provenance.json').write_text(json.dumps(provenance,indent=2)+chr(10))
           print(json.dumps(provenance))
           PY
-      - name: Upload two native captures and provenance
+      - name: Upload tested source provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: provider-ui-soundcraft-a17384dcf118
+          name: provider-checks-soundcraft-fcf2f612289d
           path: |
-            ${{ runner.temp }}/provider-evidence/soundcraft-off.png
-            ${{ runner.temp }}/provider-evidence/soundcraft-on.png
             ${{ runner.temp }}/provider-evidence/provenance.json
           if-no-files-found: error
           retention-days: 14
