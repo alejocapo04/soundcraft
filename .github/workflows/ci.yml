@@ -15,14 +15,14 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: "0"
       RUST_TEST_THREADS: "1"
       WGPU_BACKEND: vulkan
-      EXPECTED_SOURCE_SHA: "e2b0e10d14d178131ee15924c3600c006a265f6a"
+      EXPECTED_SOURCE_SHA: "215eaa0a3a883be68e0c195425e5f9da084a072e"
       CARGO_CACHE_AUTO_CLEAN_FREQUENCY: "never"
       NEXTEST_TEST_THREADS: "1"
       RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: "e2b0e10d14d178131ee15924c3600c006a265f6a"
+          ref: "215eaa0a3a883be68e0c195425e5f9da084a072e"
           persist-credentials: false
       - name: Prepare runtime environment before tool setup
         shell: bash
@@ -144,7 +144,7 @@ jobs:
       - name: Upload tested source provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: provider-checks-soundcraft-e2b0e10d14d1
+          name: provider-checks-soundcraft-215eaa0a3a88
           path: |
             ${{ runner.temp }}/provider-evidence/provenance.json
           if-no-files-found: error
