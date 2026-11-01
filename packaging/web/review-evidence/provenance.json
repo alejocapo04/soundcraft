@@ -1,0 +1,25 @@
+{
+  "source_sha": "a17384dcf1183318893023974e219dd7b229e2de",
+  "fonts_sha": "bfcbf714e45a3ea8e98f88ab2b7971372a576414",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "workflow_sha": "5ea2aa3711239b503e7c9bc72edca6028f2baee1",
+  "run_id": "41281023900",
+  "renderer": "repository native offscreen renderer; synthetic resources",
+  "browser_backend_e2e": false,
+  "images": [
+    {
+      "file": "soundcraft-off.png",
+      "width": 2880,
+      "height": 1800,
+      "bytes": 286638,
+      "sha256": "c8651d9b0967a21636b8cf011e1381f4672dc2c7be322d6cd9b05052a81eb081"
+    },
+    {
+      "file": "soundcraft-on.png",
+      "width": 2880,
+      "height": 1800,
+      "bytes": 373646,
+      "sha256": "251b4edeca8c916b2f2248bbad7432f64ca68b983915b8880cd414655c1dc747"
+    }
+  ]
+}
